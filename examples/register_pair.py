@@ -8,12 +8,15 @@ import pandas as pd
 
 from ptv import register_pair_min
 
-def load_img(path):
-    data_folder = f"/mnt/asgard0/data/y2026-p13-Data/ANHIR/"
-    img = cv2.imread(data_folder + path, cv2.IMREAD_GRAYSCALE)
+def load_data(path_to_img, path_to_landmark):
+    data_folder = f"/mnt/asgard0/data/y2026-p13-Data"
+    img = cv2.imread(data_folder + '/ANHIR/' + path_to_img, cv2.IMREAD_GRAYSCALE)
+    landmarks = pd.read_csv(data_folder +'/Landmarks/' +  path_to_landmark)
     if img is None:
-        raise FileNotFoundError(path)
-    return img
+        raise FileNotFoundError(path_to_img)
+    if landmarks is None:
+        raise FileNotFoundError(path_to_landmarks)
+    return img, landmarks
 
 def img_to_tensor(img, device, dtype):
     img = img.astype(np.float32) / 255.0
@@ -38,33 +41,44 @@ def sobel(img, ksize):
     grad = cv2.addWeighted(abs_grad_x, 0.5, abs_grad_y, 0.5, 0)
     return grad
 
-def down_sample_img(img):
-    return cv2.resize(img, None, fx=0.5, fy=0.5, interpolation=cv2.INTER_AREA)
+def downsample(img, landmarks, fx, fy):
 
-def preprocess_img(img):
+    landmarks["X"] *= fx
+    landmarks["Y"] *= fy
+
+    return cv2.resize(img, None, fx=fx, fy=fy, interpolation=cv2.INTER_AREA), landmarks
+
+
+def preprocess_img(img, landmarks):
     img = sobel(img, ksize=7)
     img = cv2.medianBlur(img, 5)
-    img = down_sample_img(img)
+    img = downsample(img, landmarks, fx, fy)
     return img
 
-def add_padding(src, target):
+def add_padding(mov, fix, mov_landmarks, fix_landmarks):
 
-    x_diff, y_diff = src.shape[1] - target.shape[1], src.shape[0] - target.shape[0]
+    x_diff, y_diff = mov.shape[1] - fix.shape[1], mov.shape[0] - fix.shape[0]
 
-    src_padding = [np.abs(min(x_diff, 0)), np.abs(min(y_diff, 0))]
-    target_padding = [max(x_diff, 0), max(y_diff, 0)]
+    mov_padding = [np.abs(min(x_diff, 0)), np.abs(min(y_diff, 0))]
+    fix_padding = [max(x_diff, 0), max(y_diff, 0)]
 
-    stop, sbot = src_padding[1]//2, src_padding[1]//2 + src_padding[1]%2
-    ttop, tbot = target_padding[1]//2, target_padding[1]//2 + target_padding[1]%2
+    stop, sbot = mov_padding[1]//2, mov_padding[1]//2 + mov_padding[1]%2
+    ttop, tbot = fix_padding[1]//2, fix_padding[1]//2 + fix_padding[1]%2
 
-    sleft, sright = src_padding[0]//2, src_padding[0]//2 + src_padding[0]%2
-    tleft, tright = target_padding[0]//2, target_padding[0]//2 + target_padding[0]%2
+    sleft, sright = mov_padding[0]//2, mov_padding[0]//2 + mov_padding[0]%2
+    tleft, tright = fix_padding[0]//2, fix_padding[0]//2 + fix_padding[0]%2
 
-    src = cv2.copyMakeBorder(src, stop, sbot, sleft, sright, cv2.BORDER_CONSTANT, value=(0, 0, 0))
-    target = cv2.copyMakeBorder(target, ttop, tbot, tleft, tright, cv2.BORDER_CONSTANT, value=(0, 0, 0))
+    mov = cv2.copyMakeBorder(mov, stop, sbot, sleft, sright, cv2.BORDER_CONSTANT, value=(0, 0, 0))
+    fix = cv2.copyMakeBorder(fix, ttop, tbot, tleft, tright, cv2.BORDER_CONSTANT, value=(0, 0, 0))
 
-    return src, target
+    mov_landmarks["X"] += sleft
+    fix_landmarks["X"] += tleft 
 
+    mov_landmarks["Y"] += stop
+    fix_landmarks["Y"] += ttop 
+
+
+    return mov, fix
 
 def load_training_csv(csv_file):
     data_folder = f"/mnt/asgard0/data/y2026-p13-Data/"
@@ -79,7 +93,7 @@ def load_evaluation_csv(csv_file):
     return evaluation_df
 
 
-def compute_metric(fixed, moving, params=None):
+def compute_metric(fixed_path, moving_path, fixed_landmarks_path, moving_landmarks_path, params=None):
 
     dtype = torch.float32
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -91,18 +105,18 @@ def compute_metric(fixed, moving, params=None):
     # spacing = tuple(float(z) for z in fix_nii.header.get_zooms()[:3])
 
     # 2d overwrite 
-    fix_img = load_img(fixed)
-    mov_img = load_img(moving)
+    fix_img, fix_landmarks = load_data(fixed_path, fixed_landmarks_path)
+    mov_img = load_data(moving_path, moving_landmarks_path)
     spacing = (1.0, 1.0)
 
     # ------- Preprocessing ---------
-    fix_img = preprocess_img(fix_img)
+    fix_img = preprocess_img(fix_img, fix_landmark)
     cv2.imwrite("fix_img.jpg", fix_img)
 
-    mov_img = preprocess_img(mov_img)
+    mov_img = preprocess_img(mov_img, mov_landmarks)
     cv2.imwrite("mov_img.jpg", mov_img)
 
-    fix_img, mov_img = add_padding(fix_img, mov_img)
+    fix_img, mov_img = add_padding(fix_img, mov_img, fix_landmarks, mov_landmarks)
 
     # ------ Create tensor ---------
     fix_t_tens = img_to_tensor(fix_img, device, dtype)
@@ -165,9 +179,14 @@ def main():
     out_df = pd.DataFrame(columns=['Source image', 'Target image', 'loss']) 
 
     for _, row in training_df.iterrows():
-        moving = row.loc["Source image"]
         fixed = row.loc["Target image"]
-        infos = compute_metric(fixed, moving) # params? 
+        fix_landmarks = row.loc["Target landmarks"]
+        moving = row.loc["Source image"]
+        mov_landmarks = row.loc["Source landmarks"]
+        
+        # ladda in data 
+
+        infos = compute_metric(fixed, moving, fix_landmarks, mov_landmarks) # params? 
         # new_row = pd.DataFrame({"Name": ["Eve"], "Age": [28]}) # byt till våra kolumner lol 
         # out_df = pd.concat([out_df, new_row], ignore_index=True)
 
