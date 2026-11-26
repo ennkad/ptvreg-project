@@ -49,7 +49,7 @@ def downsample(img, landmarks, fx, fy):
     return cv2.resize(img, None, fx=fx, fy=fy, interpolation=cv2.INTER_AREA), landmarks
 
 
-def preprocess_img(img, landmarks):
+def preprocess_img(img, landmarks, fx, fy):
     img = sobel(img, ksize=7)
     img = cv2.medianBlur(img, 5)
     img = downsample(img, landmarks, fx, fy)
@@ -93,7 +93,8 @@ def load_evaluation_csv(csv_file):
     return evaluation_df
 
 
-def compute_metric(fixed_path, moving_path, fixed_landmarks_path, moving_landmarks_path, params=None):
+def compute_metric(fixed_path, moving_path, fixed_landmarks_path, moving_landmarks_path,
+                    fx, fy, params=None):
 
     dtype = torch.float32
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -106,14 +107,14 @@ def compute_metric(fixed_path, moving_path, fixed_landmarks_path, moving_landmar
 
     # 2d overwrite 
     fix_img, fix_landmarks = load_data(fixed_path, fixed_landmarks_path)
-    mov_img = load_data(moving_path, moving_landmarks_path)
+    mov_img, mov_landmarks = load_data(moving_path, moving_landmarks_path)
     spacing = (1.0, 1.0)
 
     # ------- Preprocessing ---------
-    fix_img = preprocess_img(fix_img, fix_landmark)
+    fix_img, fix_landmarks = preprocess_img(fix_img, fix_landmarks, fx, fy)
     cv2.imwrite("fix_img.jpg", fix_img)
 
-    mov_img = preprocess_img(mov_img, mov_landmarks)
+    mov_img, mov_landmarks = preprocess_img(mov_img, mov_landmarks, fx, fy)
     cv2.imwrite("mov_img.jpg", mov_img)
 
     fix_img, mov_img = add_padding(fix_img, mov_img, fix_landmarks, mov_landmarks)
@@ -185,8 +186,8 @@ def main():
         mov_landmarks = row.loc["Source landmarks"]
         
         # ladda in data 
-
-        infos = compute_metric(fixed, moving, fix_landmarks, mov_landmarks) # params? 
+        fx, fy = (0.5, 0.5)
+        infos = compute_metric(fixed, moving, fix_landmarks, mov_landmarks, fx, fy) # params? 
         # new_row = pd.DataFrame({"Name": ["Eve"], "Age": [28]}) # byt till våra kolumner lol 
         # out_df = pd.concat([out_df, new_row], ignore_index=True)
 
