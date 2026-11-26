@@ -39,13 +39,32 @@ def sobel(img, ksize):
     return grad
 
 def down_sample_img(img):
-    return cv2.resize(img, fx=0.5, fy=0.5 interpolation=cv2.INTER_AREA)
+    return cv2.resize(img, None, fx=0.5, fy=0.5, interpolation=cv2.INTER_AREA)
 
 def preprocess_img(img):
     img = sobel(img, ksize=7)
     img = cv2.medianBlur(img, 5)
     img = down_sample_img(img)
     return img
+
+def add_padding(src, target):
+
+    x_diff, y_diff = src.shape[1] - target.shape[1], src.shape[0] - target.shape[0]
+
+    src_padding = [np.abs(min(x_diff, 0)), np.abs(min(y_diff, 0))]
+    target_padding = [max(x_diff, 0), max(y_diff, 0)]
+
+    stop, sbot = src_padding[1]//2, src_padding[1]//2 + src_padding[1]%2
+    ttop, tbot = target_padding[1]//2, target_padding[1]//2 + target_padding[1]%2
+
+    sleft, sright = src_padding[0]//2, src_padding[0]//2 + src_padding[0]%2
+    tleft, tright = target_padding[0]//2, target_padding[0]//2 + target_padding[0]%2
+
+    src = cv2.copyMakeBorder(src, stop, sbot, sleft, sright, cv2.BORDER_CONSTANT, value=(0, 0, 0))
+    target = cv2.copyMakeBorder(target, ttop, tbot, tleft, tright, cv2.BORDER_CONSTANT, value=(0, 0, 0))
+
+    return src, target
+
 
 def load_training_csv(csv_file):
     data_folder = f"/mnt/asgard0/data/y2026-p13-Data/"
@@ -83,6 +102,8 @@ def compute_metric(fixed, moving, params=None):
     mov_img = preprocess_img(mov_img)
     cv2.imwrite("mov_img.jpg", mov_img)
 
+    fix_img, mov_img = add_padding(fix_img, mov_img)
+
     # ------ Create tensor ---------
     fix_t_tens = img_to_tensor(fix_img, device, dtype)
     mov_t_tens = img_to_tensor(mov_img, device, dtype)
@@ -117,11 +138,24 @@ def compute_metric(fixed, moving, params=None):
     print(_infos[-1].total_loss_norm)
     return _infos[-1]
 
+def filter_training_data(df, n_pairs):
+
+    df["category"] = df["Source image"].str.split("/").str[0].str.split("_").str[0]
+
+    n_total = n_pairs
+    n_per_cat = n_total // df["category"].nunique()  
+
+    samples = (
+        df.groupby("category", group_keys=False)
+        .sample(n=n_per_cat, random_state=42)     
+    )
+
+    return samples
 
 def main():
 
-
     training_df = load_training_csv("dataset_medium.csv")
+    training_df = filter_training_data(training_df, 8)
     evaluation_df = load_evaluation_csv("dataset_medium.csv")
     if training_df["status"].unique() == "training":
         print(f"Successfully loaded training dataset. ({training_df.shape[0]} rows)")
@@ -130,16 +164,12 @@ def main():
 
     out_df = pd.DataFrame(columns=['Source image', 'Target image', 'loss']) 
 
-    src = "breast_1/scale-20pc/HE.jpg"
-    target = "breast_1/scale-20pc/ER.jpg"
-    infos = compute_metric(src, target)
-
-    # for row in training_df.rows:
-    #     src = row.loc["Source image"]
-    #     target = row.loc["Target image"]
-    #     infos = compute_metric(src, target, params) # params? 
-    #     # new_row = pd.DataFrame({"Name": ["Eve"], "Age": [28]}) # byt till våra kolumner lol 
-    #     # out_df = pd.concat([out_df, new_row], ignore_index=True)
+    for _, row in training_df.iterrows():
+        moving = row.loc["Source image"]
+        fixed = row.loc["Target image"]
+        infos = compute_metric(fixed, moving) # params? 
+        # new_row = pd.DataFrame({"Name": ["Eve"], "Age": [28]}) # byt till våra kolumner lol 
+        # out_df = pd.concat([out_df, new_row], ignore_index=True)
 
     return 0 
 
