@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ptvreg-torch"
-version = "0.3.0"
+version = "0.2.0"
 description = "PyTorch port of pTVreg — parametric total-variation image registration"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -18,12 +18,14 @@ keywords = [
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: Apache Software License",
     "Topic :: Scientific/Engineering :: Medical Science Apps.",
 ]
 dependencies = [
     "torch>=1.12",
     "numpy>=1.21",
+    "nibabel>=5.3.3",
+    "opencv-python>=5.0.0.93",
+    "pandas>=2.3.3",
 ]
 
 [project.optional-dependencies]
