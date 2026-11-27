@@ -882,6 +882,7 @@ def register_pair_min(
     border_mask = int(opts.get("border_mask", 3))
     interp_type = int(opts.get("interp_type", 0))
     verbose = bool(opts.get("verbose", False))
+    track_progress = bool(opts.get("track_progress", False))
     opt_method = str(opts.get("opt_method", "lbfgs")).lower()
     cp_refinements = int(opts.get("cp_refinements", 0))
 
@@ -905,6 +906,9 @@ def register_pair_min(
         print(f"Registration: {nlvl} pyramid levels + {cp_refinements} "
               f"cp_refinements = {total_levels} total, "
               f"opt_method={opt_method}")
+    if track_progress:
+        total_levels = nlvl + cp_refinements 
+        print(f"Registration: {nlvl} pyramid levels", end='\r')
 
 
     sigma_blur = 0.4 * (0.5 / k_down)
@@ -953,6 +957,8 @@ def register_pair_min(
                   f"pix_res={tuple(f'{p:.3f}' for p in cur_pr)}"
                   + (f", lcc_sigma_vox={tuple(f'{v:.2f}' for v in _lcc_sigma_pix(opts, cur_pr, nd))}"
                      if opts.get("metric") == "lcc" else ""))
+        if track_progress: 
+            print(f"Level {level_num}/{total_levels}", end='\r')
 
         if knots is None:
             knots = init_knots(
@@ -1000,6 +1006,8 @@ def register_pair_min(
             print(f"Level {level_num}/{total_levels} (cp_refine {ref_idx+1}): "
                   f"size={cur_imsz}, grid={old_gs}->{cur_gs}, "
                   f"pix_res={tuple(f'{p:.3f}' for p in cur_pr)}")
+        if track_progress: 
+            print(f"Level {level_num}/{total_levels}", end='\r')
 
         knots = upsample_knots(
             knots, prev_imsz, old_gs,
@@ -1251,6 +1259,7 @@ def register_pair_symmetric(
     border_mask = int(opts.get("border_mask", 3))
     interp_type = int(opts.get("interp_type", 0))
     verbose = bool(opts.get("verbose", False))
+    track_progress = bool(opts.get("track_progress", False))
     opt_method = str(opts.get("opt_method", "lbfgs")).lower()
     cp_refinements = int(opts.get("cp_refinements", 0))
     ic_weight = float(opts.get("ic_weight", 1.0))
@@ -1275,6 +1284,9 @@ def register_pair_symmetric(
         print(f"Symmetric registration: {nlvl} pyramid levels + "
               f"{cp_refinements} cp_refinements = {total_levels} total, "
               f"opt_method={opt_method}, ic_weight={ic_weight}")
+    if track_progress: 
+        total_levels = nlvl + cp_refinements
+        print(f"Symmetric registration: {nlvl} pyramid levels", end='\r')
 
 
     sigma_blur = 0.4 * (0.5 / k_down)
@@ -1323,6 +1335,8 @@ def register_pair_symmetric(
                   f"pix_res={tuple(f'{p:.3f}' for p in cur_pr)}"
                   + (f", lcc_sigma_vox={tuple(f'{v:.2f}' for v in _lcc_sigma_pix(opts, cur_pr, nd))}"
                      if opts.get("metric") == "lcc" else ""))
+        if track_progress: 
+            print(f"Level {level_num}/{total_levels}", end='\r')
 
         if knots_fm is None:
             knots_fm = init_knots(cur_imsz, cur_gs, nd, 1, spline_order,
@@ -1369,6 +1383,8 @@ def register_pair_symmetric(
             print(f"Level {level_num}/{total_levels} (cp_refine {ref_idx+1}): "
                   f"size={cur_imsz}, grid={old_gs}->{cur_gs}, "
                   f"pix_res={tuple(f'{p:.3f}' for p in cur_pr)}")
+        if track_progress:
+            print(f"Level {level_num}/{total_levels}", end='\r')
 
         knots_fm = upsample_knots(
             knots_fm, prev_imsz, old_gs, cur_imsz, cur_gs,
